@@ -1,12 +1,11 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-let browserClient: SupabaseClient | null = null;
-
 /**
- * ブラウザ用 Supabase クライアント（遅延生成）。
- * 環境変数はこの関数が呼ばれたときに検証するため、
- * import しただけではアプリ全体が落ちません。
+ * ブラウザ用 Supabase クライアント。
+ * @supabase/ssr の createBrowserClient がブラウザではシングルトンになるため、
+ * ここでは毎回呼び出して同一インスタンスを返す。
+ * セッションは Cookie（document.cookie）に保持され、middleware で更新される。
  */
 export function getSupabase(): SupabaseClient {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -24,9 +23,5 @@ export function getSupabase(): SupabaseClient {
     );
   }
 
-  if (!browserClient) {
-    browserClient = createBrowserClient(supabaseUrl, supabaseAnonKey);
-  }
-
-  return browserClient;
+  return createBrowserClient(supabaseUrl, supabaseAnonKey);
 }

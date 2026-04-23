@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 
 import TaskForm from "@/src/components/TaskForm";
 import { getSupabase } from "@/src/lib/supabase";
+import { runWithSupabaseNetworkRetry } from "@/src/lib/supabaseNetworkRetry";
 import type { Task, TaskStatus } from "@/src/types/task";
+import confetti from 'canvas-confetti';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -102,20 +104,13 @@ export default function DashboardPage() {
 
     setErrorMessage(null);
 
-    try {
+    const result = await runWithSupabaseNetworkRetry(router, async () => {
       const supabase = getSupabase();
       const { error } = await supabase.from("tasks").delete().eq("id", taskId);
-      if (error) {
-        setErrorMessage(error.message);
-        return;
-      }
-
+      if (error) throw new Error(error.message);
       await fetchTasks();
-    } catch (e) {
-      setErrorMessage(
-        e instanceof Error ? e.message : "削除に失敗しました。"
-      );
-    }
+    });
+    if (!result.ok) setErrorMessage(result.message);
   };
 
   const onStartEdit = (task: Task) => {
@@ -134,7 +129,7 @@ export default function DashboardPage() {
     if (!editTitle.trim()) return;
 
     setErrorMessage(null);
-    try {
+    const result = await runWithSupabaseNetworkRetry(router, async () => {
       const supabase = getSupabase();
       const { error } = await supabase
         .from("tasks")
@@ -144,40 +139,36 @@ export default function DashboardPage() {
         })
         .eq("id", taskId);
 
-      if (error) {
-        setErrorMessage(error.message);
-        return;
-      }
+      if (error) throw new Error(error.message);
 
       onCancelEdit();
       await fetchTasks();
-    } catch (e) {
-      setErrorMessage(
-        e instanceof Error ? e.message : "保存に失敗しました。"
-      );
-    }
+    });
+    if (!result.ok) setErrorMessage(result.message);
   };
 
   const onChangeTaskStatus = async (taskId: string, status: TaskStatus) => {
     setErrorMessage(null);
-    try {
+    const result = await runWithSupabaseNetworkRetry(router, async () => {
       const supabase = getSupabase();
       const { error } = await supabase
         .from("tasks")
         .update({ status })
         .eq("id", taskId);
 
-      if (error) {
-        setErrorMessage(error.message);
-        return;
-      }
+      if (error) throw new Error(error.message);
 
       await fetchTasks();
-    } catch (e) {
-      setErrorMessage(
-        e instanceof Error ? e.message : "ステータス更新に失敗しました。"
-      );
+    if (status === "完了") {
+      confetti({
+        particleCount: 150, // 紙吹雪の量
+        spread: 70,        // 広がり方
+        origin: { y: 0.6 }, // 画面のどの高さから出るか（0.6はやや下め）
+        zIndex: 9999,      // 他の要素より手前に表示
+      });
     }
+    });
+    if (!result.ok) setErrorMessage(result.message);
   };
 
   const truncateDescription = (description: string | null) => {
@@ -194,6 +185,7 @@ export default function DashboardPage() {
     { 未着手: [], 進行中: [], 完了: [] }
   );
 
+  
   const columnStyles: Record<TaskStatus, string> = {
     未着手: "bg-slate-100/80 border-slate-200",
     進行中: "bg-blue-50/80 border-blue-200",
@@ -235,10 +227,26 @@ export default function DashboardPage() {
         </div>
 
         {!loading && !errorMessage && tasks.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-slate-600">
-            タスクがありません。上のフォームから作成してください。
-          </div>
-        )}
+  <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 px-6 py-16 text-center">
+    {/* ギャル系エンジニアらしい華やかな絵文字 */}
+    <div className="mb-4 text-6xl animate-bounce">✨</div>
+    <h3 className="mb-2 text-xl font-bold text-slate-900">
+      All Clear! お疲れ様です 🥂
+    </h3>
+    <p className="max-w-[250px] text-sm leading-6 text-slate-500">
+      今あるタスクはすべて完了しました。<br />
+      ゆっくりカフェタイムにするか、<br />
+      新しい目標を立ててみませんか？
+    </p>
+    {/* 遊び心で「ご褒美ボタン」を置いてみるのもアリです（リンク先は自由！） */}
+    <button 
+      onClick={() => window.open('https://www.google.com/search?q=学芸大学+チーズケーキ', '_blank')}
+      className="mt-6 rounded-full bg-slate-900 px-6 py-2 text-xs font-bold text-white transition hover:bg-slate-800"
+    >
+      自分へのご褒美を探す 🍰
+    </button>
+  </div>
+)}
 
         {!loading && tasks.length > 0 && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -264,8 +272,18 @@ export default function DashboardPage() {
                     tasksByStatus[status].map((task) => (
                       <div
                         key={task.id}
-                        className="rounded-xl border border-slate-200 bg-white p-4 shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+                        // 1. "group relative" を追加（これがないとボタンが変な場所に飛びます）
+                        className="group relative rounded-xl border border-slate-200 bg-white p-4 shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
                       >
+                        {/* 2. 削除ボタンをここに追加（編集モードじゃない時だけ出す、などの制限なしでOK） */}
+                        <button
+                          type="button"
+                          onClick={() => onDeleteTask(task.id)}
+                          className="absolute -top-2 -right-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-white shadow-lg opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-600 z-10"
+                        >
+                          <span className="text-[10px] font-bold">✕</span>
+                        </button>
+                        
                           {editingTaskId === task.id ? (
                             <div className="space-y-3">
                               <input
@@ -304,7 +322,7 @@ export default function DashboardPage() {
                             <>
                               <div className="flex items-start justify-between gap-3">
                                 <h3 className="text-sm font-semibold text-slate-900">
-                                  {task.title}
+                                {task.title}
                                 </h3>
                                 <div className="flex items-center gap-2">
                                   <select
